@@ -172,20 +172,14 @@ public class JarScanner {
             recordJwt(location, archiveName, jwtVersion, fatJarContext);
         }
 
-        // 2) 引入者 —— 官方 advisory 完全没覆盖的部分
-        for (Map.Entry<String, String> e : pac4jArtifacts.entrySet()) {
-            String artifactId = e.getKey();
-            if (!VersionRules.isIntroducer(artifactId)) {
-                continue;
-            }
-            String introduced = VersionRules.introducedJwtVersion(artifactId, e.getValue());
-            if (introduced == null) {
-                continue; // 该版本不引入 pac4j-jwt
-            }
-            detections.add(new Detection(location, artifactId, e.getValue(),
-                    Detection.VersionSource.POM_PROPERTIES, Detection.Kind.INTRODUCER,
-                    introduced, false, fatJarContext, VersionRules.judgeJwt(introduced)));
-        }
+        // 2) 「引入者」推断已于 2026-08-05 整个删除 —— 它是误报来源，依据见
+        //    VersionRules.INTRODUCER_RETRACTED_NOTE：pac4j-oidc 等对 pac4j-jwt 是
+        //    test/provided scope，不传递给使用者；jar 里也没有 shaded 的 jwt 类。
+        //
+        //    🔴 关键在于这一步的推断方向本身就不成立：扫描器扫的是**实际存在的构件**，
+        //    若 pac4j-jwt 真在 classpath 上，第 1) 步早就扫到并判定了。
+        //    第 2) 步做的是「没看见 pac4j-jwt，但看见了 pac4j-oidc，于是断定 jwt 也在」，
+        //    ——**在没有证据时凭推断报警**，而那个推断是错的。
 
         for (NestedArchive na : nested) {
             String childLocation = location + "!/" + na.entryName;

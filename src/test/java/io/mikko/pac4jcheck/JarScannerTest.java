@@ -136,38 +136,44 @@ public class JarScannerTest {
     }
 
     /**
-     * 引入者溯源 —— 本工具相对官方 advisory 的增量价值就在这里。
-     * pac4j-oidc 与 pac4j-jwt 同 reactor，版本恒等。
+     * 2026-08-05：「引入者」判定整个撤销，这里反过来断言<b>不再误报</b>。
+     *
+     * <p>原测试断言扫到 pac4j-oidc:5.4.3 就报 AFFECTED。那是误报 ——
+     * pac4j-oidc 对 pac4j-jwt 是 {@code test} scope，不传递给使用者；
+     * jar 实物里也没有 shaded 的 jwt 类。依据见
+     * {@link VersionRules#INTRODUCER_RETRACTED_NOTE}。
+     *
+     * <p>留着这组测试是为了<b>防止判定被改回去</b>。
      */
     @Test
-    public void introducerIsTracedAndFlagged() throws Exception {
+    public void oidcAloneIsNoLongerReported() throws Exception {
         File f = write("pac4j-oidc-5.4.3.jar", libJar("pac4j-oidc", "5.4.3"));
         JarScanner s = new JarScanner();
         s.scan(f);
-        Detection d = find(s.detections(), "pac4j-oidc", Detection.Kind.INTRODUCER);
-        assertNotNull("没识别出引入者 pac4j-oidc", d);
-        assertEquals("5.4.3", d.introducedJwtVersion());
+        assertNull("只有 pac4j-oidc 不该报危：它不会把 pac4j-jwt 带进 runtime",
+                find(s.detections(), "pac4j-oidc", Detection.Kind.INTRODUCER));
+    }
+
+    @Test
+    public void otherIntroducersAreNoLongerReported() throws Exception {
+        File f = write("javalin-pac4j-7.0.0.jar", libJar("javalin-pac4j", "7.0.0"));
+        JarScanner s = new JarScanner();
+        s.scan(f);
+        assertNull(find(s.detections(), "javalin-pac4j", Detection.Kind.INTRODUCER));
+    }
+
+    /**
+     * 撤销「引入者」推断<b>不能</b>连带削弱真正的检出能力：
+     * pac4j-jwt 自己在场时,仍须照常报危。
+     */
+    @Test
+    public void realJwtStillDetectedAfterRetraction() throws Exception {
+        File f = write("pac4j-jwt-5.4.3.jar", libJar("pac4j-jwt", "5.4.3"));
+        JarScanner s = new JarScanner();
+        s.scan(f);
+        Detection d = find(s.detections(), "pac4j-jwt", Detection.Kind.JWT_DIRECT);
+        assertNotNull("pac4j-jwt 本体必须仍然被检出", d);
         assertEquals(VersionRules.Verdict.AFFECTED, d.verdict());
-        assertEquals("5.7.9", d.fixedVersion());
-    }
-
-    @Test
-    public void introducerOnFixedVersionIsNotFlagged() throws Exception {
-        File f = write("pac4j-oidc-6.3.3.jar", libJar("pac4j-oidc", "6.3.3"));
-        JarScanner s = new JarScanner();
-        s.scan(f);
-        Detection d = find(s.detections(), "pac4j-oidc", Detection.Kind.INTRODUCER);
-        assertNotNull(d);
-        assertEquals(VersionRules.Verdict.NOT_AFFECTED, d.verdict());
-    }
-
-    /** pac4j-oidc 早期版本根本不依赖 pac4j-jwt，不能一律报危。 */
-    @Test
-    public void earlyOidcIsNotReportedAsIntroducer() throws Exception {
-        File f = write("pac4j-oidc-2.3.1.jar", libJar("pac4j-oidc", "2.3.1"));
-        JarScanner s = new JarScanner();
-        s.scan(f);
-        assertNull(find(s.detections(), "pac4j-oidc", Detection.Kind.INTRODUCER));
     }
 
     /** 无关的 pac4j 模块不该被误报。 */

@@ -37,54 +37,36 @@ public final class VersionRules {
     private static final Version V_6_0_0 = Version.parse("6.0.0");
 
     /**
-     * 会把受影响的 pac4j-jwt 一并拖进来的「引入者」构件 —— <b>官方 advisory 一个都没列</b>。
+     * <b>「引入者」判定已于 2026-08-05 全部撤销 —— 它是错的。</b>
      *
-     * <p>其中 {@code pac4j-oidc} 最要命：它是 OIDC 单点登录的主力模块，
-     * 与 pac4j-jwt 同属一个 Maven reactor，pom 里引用时不写 version、
-     * 继承 pac4j-parent 的 {@code ${project.version}}，
-     * 因此 <b>pac4j-oidc:X 必然拖进 pac4j-jwt:X</b>。
-     * 用 OIDC 做登录的人通常根本不知道自己依赖了 pac4j-jwt。
+     * <p>v0.1.0 曾判定 {@code pac4j-oidc} / {@code javalin-pac4j} /
+     * {@code lagom-pac4j-parent} / {@code ratpack-pac4j} 四个构件会把受影响的
+     * pac4j-jwt 一并拖进来，并称「官方 advisory 一个都没列」。
+     * 复核后确认：<b>官方 advisory 只列 pac4j-jwt 是对的，这四个都不该判为受影响。</b>
+     *
+     * <p>撤销依据（两条独立证据，均可自行复现）：
+     * <ol>
+     *   <li><b>scope 不传递</b> —— 逐版本解析 Maven Central 上的 pom：
+     *       {@code pac4j-oidc} 对 pac4j-jwt 是 {@code test}
+     *       （3.0.0 / 4.0.0 / 4.5.0 / 5.0.0 / 5.7.0 / 6.0.0 / 6.3.0 无一例外），
+     *       {@code javalin-pac4j} 是 {@code test}，
+     *       {@code lagom-pac4j-parent} 是 {@code provided}，
+     *       而 {@code ratpack-pac4j:1.4.6} 那段依赖<b>整块被 XML 注释包着</b>，
+     *       根本不存在。Maven 语义下 {@code test} / {@code provided}
+     *       <b>不传递给下游</b>，使用者的 runtime classpath 里不会出现 pac4j-jwt。</li>
+     *   <li><b>构件实物复验</b> —— {@code pac4j-oidc-6.0.0.jar} 共 78 个条目，
+     *       全部位于 {@code org/pac4j/oidc/} 下，<b>没有任何 shaded 进来的
+     *       pac4j-jwt 类</b>。既不传递依赖，也不打包携带。</li>
+     * </ol>
+     *
+     * <p>原判定的根因：只看了「谁在 pom 里写了这个坐标」，
+     * 没看 {@code scope} —— 把「写了坐标」当成了「使用者会拿到它」。
+     *
+     * <p>注意：若使用者<b>自己显式依赖</b> pac4j-jwt，扫描器的第 1 步本就会扫到并判定，
+     * 不依赖这套推断。<b>推断本身是纯粹的误报来源，故整个撤销。</b>
      */
-    public static final String INTRODUCER_OIDC = "org.pac4j:pac4j-oidc";
-
-    /** pac4j-oidc 从这个版本起才开始依赖 pac4j-jwt；更早的版本不受影响。 */
-    private static final Version OIDC_JWT_SINCE = Version.parse("3.0.0-RC1");
-
-    /**
-     * 另外三个引入者用 {@code ${pac4j.version}} 属性锁定 pac4j-jwt 版本，
-     * 各版本对应关系不规则，只能逐版本实测得出（数据来自 Maven Central 逐个 pom 解析）。
-     */
-    private static final Map<String, String> JAVALIN;
-    private static final Map<String, String> LAGOM;
-    private static final Map<String, String> RATPACK;
-
-    static {
-        Map<String, String> javalin = new LinkedHashMap<String, String>();
-        javalin.put("1.0.0.RC0", "3.0.0");
-        javalin.put("2.0.0", "3.8.2");
-        javalin.put("3.0.0", "4.0.1");
-        javalin.put("4.0.0", "5.1.3");
-        javalin.put("5.0.0", "5.4.3");
-        javalin.put("5.0.1", "5.5.0");
-        javalin.put("6.0.0", "5.7.0");
-        javalin.put("7.0.0", "6.0.4.1");
-        javalin.put("8.0.0", "6.3.3"); // 已含修复
-        JAVALIN = Collections.unmodifiableMap(javalin);
-
-        Map<String, String> lagom = new LinkedHashMap<String, String>();
-        lagom.put("1.0.0", "3.4.0");
-        lagom.put("1.1.0", "3.6.1");
-        lagom.put("2.0.0", "3.6.1");
-        lagom.put("2.1.0", "3.7.0");
-        lagom.put("2.2.0", "3.7.0");
-        lagom.put("2.2.1", "3.7.0");
-        LAGOM = Collections.unmodifiableMap(lagom);
-
-        Map<String, String> ratpack = new LinkedHashMap<String, String>();
-        ratpack.put("1.4.6", "1.8.9");
-        // ratpack-pac4j 2.0.0 起不再依赖 pac4j-jwt
-        RATPACK = Collections.unmodifiableMap(ratpack);
-    }
+    public static final String INTRODUCER_RETRACTED_NOTE =
+            "引入者判定已撤销：pac4j-oidc 等对 pac4j-jwt 是 test/provided scope，不传递给使用者";
 
     private VersionRules() {
     }
@@ -150,39 +132,24 @@ public final class VersionRules {
     }
 
     /**
-     * 给定一个「引入者」构件及其版本，推断它拖进来的 pac4j-jwt 版本。
+     * <b>恒返回 {@code null}</b> —— 「引入者会拖进 pac4j-jwt」这个推断已被证伪，
+     * 详见 {@link #INTRODUCER_RETRACTED_NOTE} 处的完整依据。
      *
-     * @return pac4j-jwt 版本；该版本不引入 pac4j-jwt 时返回 null
+     * <p>方法与 JSON 字段 {@code introducedJwtVersion} 一并保留（值恒为 null），
+     * 是为了不破坏 v0.1.0 已经发布出去的输出结构。
+     *
+     * @return 恒为 null
      */
     public static String introducedJwtVersion(String artifactId, String version) {
-        if (artifactId == null || version == null) {
-            return null;
-        }
-        if ("pac4j-oidc".equals(artifactId)) {
-            Version v = Version.parse(version);
-            if (v == null || v.lt(OIDC_JWT_SINCE)) {
-                return null; // 3.0.0-RC1 之前不依赖 pac4j-jwt
-            }
-            return version; // 同 reactor，版本恒等
-        }
-        if ("javalin-pac4j".equals(artifactId)) {
-            return JAVALIN.get(version);
-        }
-        if ("lagom-pac4j".equals(artifactId) || "lagom-pac4j-parent".equals(artifactId)) {
-            return LAGOM.get(version);
-        }
-        if ("ratpack-pac4j".equals(artifactId)) {
-            return RATPACK.get(version);
-        }
         return null;
     }
 
-    /** 该 artifactId 是否属于我们已知的「引入者」。 */
+    /**
+     * <b>恒返回 {@code false}</b> —— 判定已撤销，理由同上。
+     *
+     * <p>只有使用者<b>自己显式依赖</b> pac4j-jwt 才会被判定，那条路径走扫描器第 1 步。
+     */
     public static boolean isIntroducer(String artifactId) {
-        return "pac4j-oidc".equals(artifactId)
-                || "javalin-pac4j".equals(artifactId)
-                || "lagom-pac4j".equals(artifactId)
-                || "lagom-pac4j-parent".equals(artifactId)
-                || "ratpack-pac4j".equals(artifactId);
+        return false;
     }
 }

@@ -19,7 +19,7 @@ import java.util.List;
  */
 public final class Main {
 
-    static final String VERSION = "0.1.0";
+    static final String VERSION = "0.2.0";
 
     public static void main(String[] args) {
         List<String> targets = new ArrayList<String>();
@@ -107,7 +107,7 @@ public final class Main {
         out.println();
 
         if (scanner.detections().isEmpty()) {
-            out.println("[OK] 未发现 pac4j-jwt,也未发现会引入它的构件。");
+            out.println("[OK] 未发现 pac4j-jwt。");
         }
 
         for (Detection d : scanner.detections()) {

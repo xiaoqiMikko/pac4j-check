@@ -106,50 +106,41 @@ public class VersionRulesTest {
         assertEquals(Verdict.UNKNOWN, VersionRules.judgeJwt("not-a-version"));
     }
 
-    // ---------- 引入者映射（官方 advisory 完全没有的部分） ----------
+    // ---------- 「引入者」判定已撤销（2026-08-05）----------
+    //
+    // 这一组测试原本断言 pac4j-oidc / javalin / lagom / ratpack 会拖进 pac4j-jwt。
+    // 复核后确认那是**误报**，依据见 VersionRules.INTRODUCER_RETRACTED_NOTE：
+    //   · pac4j-oidc → test scope（3.0.0 ~ 6.3.0 逐版本核过，无一例外）
+    //   · javalin-pac4j → test scope；lagom-pac4j-parent → provided scope
+    //   · ratpack-pac4j:1.4.6 那段依赖整块被 XML 注释包着，根本不存在
+    //   · pac4j-oidc-6.0.0.jar 实物复验：78 个条目全在 org/pac4j/oidc/ 下，无 shaded jwt 类
+    // test / provided 在 Maven 里不传递给下游 → 使用者拿不到 pac4j-jwt。
+    //
+    // 现在把它们**反过来断言不再误报** —— 留着这组测试就是为了防止判定被改回去。
 
     @Test
-    public void oidcDragsInSameJwtVersion() {
-        // pac4j-oidc 与 pac4j-jwt 同 reactor，版本恒等
-        assertEquals("5.4.3", VersionRules.introducedJwtVersion("pac4j-oidc", "5.4.3"));
-        assertEquals(Verdict.AFFECTED,
-                VersionRules.judgeJwt(VersionRules.introducedJwtVersion("pac4j-oidc", "5.4.3")));
-    }
-
-    @Test
-    public void oidcBefore_3_0_0_RC1_doesNotDependOnJwt() {
-        // 实测：pac4j-oidc 早期 33 个版本根本不依赖 pac4j-jwt，不能一律报危
+    public void oidcIsNotAffected_testScopeDoesNotPropagate() {
+        assertNull(VersionRules.introducedJwtVersion("pac4j-oidc", "5.4.3"));
+        assertNull(VersionRules.introducedJwtVersion("pac4j-oidc", "6.0.0"));
         assertNull(VersionRules.introducedJwtVersion("pac4j-oidc", "1.7.0"));
-        assertNull(VersionRules.introducedJwtVersion("pac4j-oidc", "2.3.1"));
     }
 
     @Test
-    public void javalinVersionMapping() {
-        assertEquals("3.0.0", VersionRules.introducedJwtVersion("javalin-pac4j", "1.0.0.RC0"));
-        assertEquals("6.0.4.1", VersionRules.introducedJwtVersion("javalin-pac4j", "7.0.0"));
-        // javalin-pac4j 8.0.0 锁的是已修复的 6.3.3
-        assertEquals("6.3.3", VersionRules.introducedJwtVersion("javalin-pac4j", "8.0.0"));
-        assertEquals(Verdict.NOT_AFFECTED,
-                VersionRules.judgeJwt(VersionRules.introducedJwtVersion("javalin-pac4j", "8.0.0")));
-        assertEquals(Verdict.AFFECTED,
-                VersionRules.judgeJwt(VersionRules.introducedJwtVersion("javalin-pac4j", "7.0.0")));
+    public void javalinLagomRatpackAreNotAffected() {
+        assertNull(VersionRules.introducedJwtVersion("javalin-pac4j", "7.0.0"));
+        assertNull(VersionRules.introducedJwtVersion("javalin-pac4j", "1.0.0.RC0"));
+        assertNull(VersionRules.introducedJwtVersion("lagom-pac4j-parent", "2.2.1"));
+        // 1.4.6 曾是全工具唯一被判受影响的 ratpack 版本，实为注释掉的 test 依赖
+        assertNull(VersionRules.introducedJwtVersion("ratpack-pac4j", "1.4.6"));
     }
 
     @Test
-    public void lagomAndRatpackMapping() {
-        assertEquals("3.7.0", VersionRules.introducedJwtVersion("lagom-pac4j-parent", "2.2.1"));
-        assertEquals("1.8.9", VersionRules.introducedJwtVersion("ratpack-pac4j", "1.4.6"));
-        // ratpack-pac4j 2.0.0 起不再依赖 pac4j-jwt
-        assertNull(VersionRules.introducedJwtVersion("ratpack-pac4j", "2.0.0"));
-        assertNull(VersionRules.introducedJwtVersion("ratpack-pac4j", "5.0.0"));
-    }
-
-    @Test
-    public void introducerRecognition() {
-        assertTrue(VersionRules.isIntroducer("pac4j-oidc"));
-        assertTrue(VersionRules.isIntroducer("javalin-pac4j"));
+    public void nothingIsTreatedAsIntroducerAnymore() {
+        assertTrue(!VersionRules.isIntroducer("pac4j-oidc"));
+        assertTrue(!VersionRules.isIntroducer("javalin-pac4j"));
+        assertTrue(!VersionRules.isIntroducer("lagom-pac4j-parent"));
+        assertTrue(!VersionRules.isIntroducer("ratpack-pac4j"));
         assertTrue(!VersionRules.isIntroducer("pac4j-core"));
-        assertTrue(!VersionRules.isIntroducer("pac4j-saml"));
     }
 
     // ---------- 版本比较本身 ----------

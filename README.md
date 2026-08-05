@@ -24,31 +24,41 @@
 
 pac4j 被 Spring Security、**Apereo CAS**、JEE、Vert.x、Play、Dropwizard 等广泛集成。
 
-## 为什么需要一个专门的工具
+## 🔴 v0.2.0 更正:v0.1.0 的核心主张是错的
 
-**因为官方漏洞库只列了 1 个包,而实际不止。**
+**v0.1.0 声称「官方漏洞库只列了 1 个包,实际有 5 个」,并会因此对
+`pac4j-oidc` / `javalin-pac4j` / `lagom-pac4j` / `ratpack-pac4j` 报危。
+那是误报。官方 advisory 只列 `pac4j-jwt` 是对的。**
 
-官方 advisory 的 `affected` 只有 `org.pac4j:pac4j-jwt`。
-但实测(逐个解析 Maven Central 上的 pom)发现,**另有 4 个构件会把受影响的 pac4j-jwt 一并拖进来**:
+复核依据(两条独立证据,都可自行复现):
+
+| 构件 | 它对 pac4j-jwt 的依赖 | 会传给使用者吗 |
+|---|---|---|
+| `pac4j-oidc` | `test` scope(3.0.0 / 4.0.0 / 4.5.0 / 5.0.0 / 5.7.0 / 6.0.0 / 6.3.0 逐版本核过) | ❌ |
+| `javalin-pac4j` | `test` scope | ❌ |
+| `lagom-pac4j-parent` | `provided` scope | ❌ |
+| `ratpack-pac4j:1.4.6` | 那段依赖**整块被 XML 注释包着**,根本不存在 | ❌ |
+
+1. **scope 不传递** —— Maven 里 `test` / `provided` 依赖**不会传递给下游**,
+   使用者的 runtime classpath 上不会出现 pac4j-jwt。
+2. **构件实物复验** —— `pac4j-oidc-6.0.0.jar` 共 78 个条目,全部在 `org/pac4j/oidc/` 下,
+   **没有任何 shade 进来的 pac4j-jwt 类**。既不传递,也不携带。
+
+**错在哪**:v0.1.0 逐个解析了 pom,但只看「谁写了 `pac4j-jwt` 这个坐标」,
+**没看 `scope`** —— 把「pom 里写了」当成了「使用者会拿到」。
+
+> **如果你因为 v0.1.0 的报告升级过 pac4j,那次升级不是必需的(升级本身无害)。
+> 只有你的应用里真的存在受影响版本的 `pac4j-jwt` 时,才需要处置。**
+
+## 为什么仍然需要一个专门的工具
+
+判断某台机器上到底有没有受影响的 `pac4j-jwt`,`mvn dependency:tree` 在两种情况下会失效 ——
+生产机上只有一个打好的 fat-jar(没有源码和 pom);或者它被 shade 进了某个 SDK 内部,
+依赖树上根本不出现。本工具直接扫**构件本身**,不依赖构建环境。
 
 | 构件 | 受影响版本数 | 官方 advisory |
 |---|---|---|
-| `org.pac4j:pac4j-jwt` | 114 | ✅ 唯一被列出的 |
-| **`org.pac4j:pac4j-oidc`** | **84** | ❌ **未列出** |
-| `org.pac4j:javalin-pac4j` | 8 | ❌ 未列出 |
-| `org.pac4j:lagom-pac4j` | 6 | ❌ 未列出 |
-| `org.pac4j:ratpack-pac4j` | 1 | ❌ 未列出 |
-
-其中 **`pac4j-oidc` 最要紧** —— 它是 OIDC 单点登录的主力模块,与 pac4j-jwt 同属一个
-Maven reactor,pom 里引用时不写版本号、继承 `pac4j-parent` 的 `${project.version}`,
-因此 **`pac4j-oidc:X` 必然拖进 `pac4j-jwt:X`**。
-
-> **用 OIDC 做单点登录的人,通常根本不知道自己依赖了 pac4j-jwt。
-> 而由于官方 advisory 没列出 pac4j-oidc,Dependabot 也不会提醒他们。**
-
-另一个麻烦:pac4j-jwt 常常是**传递依赖**,而 `mvn dependency:tree` 在两种情况下会失效 ——
-生产机上只有一个打好的 fat-jar(没有源码和 pom);或者它被 shade 进了某个 SDK 内部,
-依赖树上根本不出现。
+| `org.pac4j:pac4j-jwt` | 114 | ✅ 唯一被列出的,**且这是对的** |
 
 ## 用法
 
@@ -71,13 +81,10 @@ java -jar pac4j-check.jar ./app.jar --gbk    # Windows 控制台中文乱码时�
   结论    :命中 CVE-2026-29000 —— JWE 处理路径未强制校验签名,
             拿到服务器 RSA 公钥即可伪造任意身份(含管理员)登录
   处置    :升级 pac4j-jwt 至 5.7.9
-
-[CRITICAL] pac4j-oidc 5.4.3
-  位置    :demo-app.jar!/BOOT-INF/lib/pac4j-oidc-5.4.3.jar
-  引入链  :pac4j-oidc:5.4.3  ->  pac4j-jwt:5.4.3
-  ⚠ 注意  :官方 advisory 未列出 pac4j-oidc,Dependabot 不会因此告警
-  处置    :升级 pac4j-jwt 至 5.7.9
 ```
+
+> v0.1.0 在这里还会多报一条 `[CRITICAL] pac4j-oidc` —— **那是误报,v0.2.0 已删除**,
+> 理由见开头的更正说明。
 
 ## 它做什么
 
@@ -99,6 +106,10 @@ pac4j-jwt  >= 6.0.4.1    且 < 6.3.3     -> 升 6.3.3
 **自校验**:本工具对 Maven Central 上 pac4j-jwt 全部 147 个版本跑判定,
 命中数为 **114**,与官方 advisory 三段区间的版本数之和(13+33+68)**精确吻合**。
 这条断言写在测试里(`OfficialRangeCrossCheckTest`),对不上就构建失败。
+
+> ⚠️ **但要清楚它验证的是什么**:它验证**版本区间算法**正确,
+> **验证不了「哪些构件该进判定表」** —— v0.1.0 的误报正是发生在后者,
+> 而当时这条自校验是绿的。**校验通过的范围 ≠ 结论成立的范围。**
 
 ### 两条必须说明的局限
 
@@ -155,27 +166,42 @@ claims and **authenticate as any user, including administrators** — with no cr
 | CVSS | **10.0** |
 | Published | 2026-03-05 |
 
+## 🔴 v0.2.0 correction: v0.1.0's central claim was wrong
+
+**v0.1.0 claimed the official advisory "lists only one package while there are five", and
+flagged `pac4j-oidc` / `javalin-pac4j` / `lagom-pac4j` / `ratpack-pac4j` as affected.
+Those were false positives. The advisory listing only `pac4j-jwt` is correct.**
+
+| Artifact | How it declares pac4j-jwt | Reaches consumers? |
+|---|---|---|
+| `pac4j-oidc` | `test` scope (verified on 3.0.0 / 4.0.0 / 4.5.0 / 5.0.0 / 5.7.0 / 6.0.0 / 6.3.0) | ❌ |
+| `javalin-pac4j` | `test` scope | ❌ |
+| `lagom-pac4j-parent` | `provided` scope | ❌ |
+| `ratpack-pac4j:1.4.6` | the whole block is **inside an XML comment** — it does not exist | ❌ |
+
+Two independent lines of evidence, both reproducible:
+
+1. **Scope does not propagate** — Maven does not pass `test` / `provided` dependencies to
+   downstream consumers, so pac4j-jwt never reaches their runtime classpath.
+2. **Artifact inspection** — `pac4j-oidc-6.0.0.jar` has 78 entries, all under
+   `org/pac4j/oidc/`, with **no shaded pac4j-jwt classes**.
+
+**Root cause:** v0.1.0 did parse every pom, but only looked at *who names the coordinate*,
+never at `scope` — mistaking "declared in a pom" for "reaches the consumer".
+
+> **If you upgraded pac4j because of a v0.1.0 report, that upgrade was not required (though
+> harmless). Action is only needed when an affected `pac4j-jwt` is actually present.**
+
 ## Why a dedicated tool
 
-**Because the official advisory lists only one package, and there are more.**
-
-Its `affected` array contains only `org.pac4j:pac4j-jwt`. Parsing every published pom on Maven
-Central shows **4 further artifacts that drag an affected pac4j-jwt in with them**:
+Deciding whether an affected `pac4j-jwt` is actually on a given machine defeats
+`mvn dependency:tree` in two common cases: a production box with only a packaged fat-jar
+(no sources, no pom), or a copy shaded inside some vendor SDK, invisible to the dependency
+tree. This tool inspects the **artifacts themselves**.
 
 | Artifact | Affected versions | In official advisory |
 |---|---|---|
-| `org.pac4j:pac4j-jwt` | 114 | ✅ the only one listed |
-| **`org.pac4j:pac4j-oidc`** | **84** | ❌ **not listed** |
-| `org.pac4j:javalin-pac4j` | 8 | ❌ not listed |
-| `org.pac4j:lagom-pac4j` | 6 | ❌ not listed |
-| `org.pac4j:ratpack-pac4j` | 1 | ❌ not listed |
-
-`pac4j-oidc` matters most: it is the main OIDC SSO module, lives in the same Maven reactor as
-pac4j-jwt, and declares the dependency without a version — inheriting `${project.version}` from
-`pac4j-parent`. So **`pac4j-oidc:X` always pulls in `pac4j-jwt:X`**.
-
-> **Teams using pac4j for OIDC single sign-on usually have no idea they depend on pac4j-jwt —
-> and because the advisory omits pac4j-oidc, Dependabot will not tell them either.**
+| `org.pac4j:pac4j-jwt` | 114 | ✅ the only one listed — **and that is correct** |
 
 ## Usage
 
